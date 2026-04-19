@@ -1,0 +1,7 @@
+*.pyc
+__pycache__/
+resources/python_venv/
+resources/aristond/__pycache__/
+*.log
+*.pid
+.htaccess

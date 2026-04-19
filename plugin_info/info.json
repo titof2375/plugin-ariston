@@ -1,0 +1,27 @@
+{
+    "id": "ariston",
+    "name": "Ariston",
+    "pluginVersion": "0.1",
+    "description": {
+        "fr_FR": "Permet de piloter une chaudière Ariston connectée via l'API Ariston NET (Genus, Clas, Alteas, etc.)."
+    },
+    "licence": "AGPL",
+    "author": "titof2375",
+    "require": "4.2",
+    "category": "energy",
+    "hasDependency": true,
+    "hasOwnDeamon": true,
+    "maxDependancyInstallTime": 10,
+    "language": [
+        "fr_FR"
+    ],
+    "compatibility": [
+        "smart",
+        "luna",
+        "atlas",
+        "rpi",
+        "docker",
+        "diy"
+    ],
+    "iconColor": "#6A0DAD"
+}

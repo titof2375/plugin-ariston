@@ -1,0 +1,12 @@
+{
+  "apt": {
+    "python3": {},
+    "python3-pip": {},
+    "python3-requests": {}
+  },
+  "pip3": {
+    "requests": {
+      "reinstall": true
+    }
+  }
+}

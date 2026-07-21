@@ -41,11 +41,36 @@ CONS_INTERVAL_DAY  = 1   # last day
 # Menu item IDs
 MENU_CH_RETURN_TEMP = 124
 
+# Delay before a single retry on a transient server error (500, etc.),
+# matching the behaviour of the reference HA ariston library.
+_RETRY_DELAY = 5
+
 _token = None
 _email = ''
 _password = ''
-_features_cache = {}   # gw -> features dict
-_last_data_items = {}  # gw -> last raw items list (for prevValue in set calls)
+_features_cache = {}   # gw_id -> features dict
+_last_data_items = {}  # gw_id -> last raw items list (for prevValue in set calls)
+_gw_id_cache = {}      # gwSerial -> gwId (internal identifier required by the data endpoints)
+
+
+def _resolve_gw_id(gw):
+    """The data endpoints (features, dataItems, menuItems, busErrors, reports)
+    require the internal gwId, not the gwSerial printed on the unit. Jeedom
+    is configured with the serial, so we resolve it once via /remote/plants/lite
+    and cache the mapping."""
+    if gw in _gw_id_cache:
+        return _gw_id_cache[gw]
+    plants = api_get('/remote/plants/lite')
+    if isinstance(plants, list):
+        for p in plants:
+            if p.get('gwSerial') == gw or p.get('gwId') == gw:
+                gw_id = p.get('gwId', gw)
+                _gw_id_cache[gw] = gw_id
+                logging.info('Resolved gw serial %s -> gwId %s', gw, gw_id)
+                return gw_id
+    logging.warning('Could not resolve gwId for %s, using as-is', gw)
+    _gw_id_cache[gw] = gw
+    return gw
 
 # ------------------------------------------------------------------
 # Auth
@@ -58,6 +83,8 @@ def api_login():
         json={'usr': _email, 'pwd': _password},
         headers=HEADERS_BASE, timeout=30, verify=True
     )
+    if not r.ok:
+        logging.error('Login failed [%s]: body=%r', r.status_code, r.text)
     r.raise_for_status()
     _token = r.json()['token']
     logging.info('Ariston NET login OK')
@@ -71,20 +98,45 @@ def _auth_headers():
     return h
 
 
-def api_get(endpoint, retried=False):
-    r = requests.get(API_BASE + endpoint, headers=_auth_headers(), timeout=30, verify=True)
+def _log_error_details(r, method, endpoint):
+    try:
+        logging.error(
+            'HTTP %s on %s %s | response headers=%s | body=%r',
+            r.status_code, method, endpoint, dict(r.headers), r.text[:500]
+        )
+    except Exception as e:
+        logging.error('Failed to log error details: %s', e)
+
+
+def api_get(endpoint, retried=False, retried_transient=False):
+    if not _token:
+        api_login()
+    headers = {'User-Agent': HEADERS_BASE['User-Agent'], 'ar.authToken': _token}
+    r = requests.get(API_BASE + endpoint, headers=headers, timeout=30, verify=True)
+    if not r.ok:
+        _log_error_details(r, 'GET', endpoint)
     if r.status_code == 401 and not retried:
         api_login()
-        return api_get(endpoint, retried=True)
+        return api_get(endpoint, retried=True, retried_transient=retried_transient)
+    if not r.ok and r.status_code not in (401, 404) and not retried_transient:
+        logging.warning('Transient error [%s] on GET %s, retrying in %ss', r.status_code, endpoint, _RETRY_DELAY)
+        time.sleep(_RETRY_DELAY)
+        return api_get(endpoint, retried=retried, retried_transient=True)
     r.raise_for_status()
     return r.json()
 
 
-def api_post(endpoint, payload, retried=False):
+def api_post(endpoint, payload, retried=False, retried_transient=False):
     r = requests.post(API_BASE + endpoint, json=payload, headers=_auth_headers(), timeout=30, verify=True)
+    if not r.ok:
+        _log_error_details(r, 'POST', endpoint)
     if r.status_code == 401 and not retried:
         api_login()
-        return api_post(endpoint, payload, retried=True)
+        return api_post(endpoint, payload, retried=True, retried_transient=retried_transient)
+    if not r.ok and r.status_code not in (401, 404) and not retried_transient:
+        logging.warning('Transient error [%s] on POST %s, retrying in %ss', r.status_code, endpoint, _RETRY_DELAY)
+        time.sleep(_RETRY_DELAY)
+        return api_post(endpoint, payload, retried=retried, retried_transient=True)
     r.raise_for_status()
     try:
         return r.json()
@@ -233,17 +285,22 @@ def _get_cons_val(sequences, cons_type, interval):
 
 def get_boiler_data(gw):
     data = {}
+    gw_id = _resolve_gw_id(gw)
     try:
-        features = get_features(gw)
+        try:
+            features = get_features(gw_id)
+        except requests.exceptions.HTTPError as e:
+            logging.warning('Features indisponibles (%s), fallback 1 zone', e)
+            features = {'zones': [{'num': 1}]}
         payload = {
             'useCache': False,
             'items': _items_list(features),
             'features': features,
             'culture': 'en-US'
         }
-        response = api_post('/remote/dataItems/{}/get?umsys=metric'.format(gw), payload)
+        response = api_post('/remote/dataItems/{}/get?umsys=metric'.format(gw_id), payload)
         raw_items = response.get('items', [])
-        _last_data_items[gw] = raw_items
+        _last_data_items[gw_id] = raw_items
         data = _parse_data(raw_items, features)
         data['online'] = 1
         logging.debug('Boiler data: %s', data)
@@ -257,7 +314,7 @@ def get_boiler_data(gw):
     # CH return temp + signal via menu items (best-effort)
     # Note: /menuItems/ NOT /remote/menuItems/
     try:
-        menu_items = api_get('/menuItems/{}?menuItems=124,119,115'.format(gw))
+        menu_items = api_get('/menuItems/{}?menuItems=124,119,115'.format(gw_id))
         if isinstance(menu_items, list):
             for item in menu_items:
                 if item.get('id') == 124:   # CH_RETURN_TEMP
@@ -288,7 +345,7 @@ def get_boiler_data(gw):
 
     # Bus errors
     try:
-        errors = api_get('/busErrors?gatewayId={}&blockingOnly=False&culture=en-US'.format(gw))
+        errors = api_get('/busErrors?gatewayId={}&blockingOnly=False&culture=en-US'.format(gw_id))
         if isinstance(errors, list) and errors:
             err = errors[0]
             data['error_code'] = '{} - {}'.format(
@@ -306,7 +363,7 @@ def get_boiler_data(gw):
 
     # Energy / consumption (best-effort)
     try:
-        sequences = api_get('/remote/reports/{}/consSequencesApi8?usages=Ch%2CDhw'.format(gw))
+        sequences = api_get('/remote/reports/{}/consSequencesApi8?usages=Ch%2CDhw'.format(gw_id))
         if isinstance(sequences, list):
             v = _get_cons_val(sequences, CONS_CH_GAS, CONS_INTERVAL_DAY)
             if v is not None: data['ch_gas_today'] = v
@@ -333,8 +390,9 @@ def get_boiler_data(gw):
 # ------------------------------------------------------------------
 
 def _set_item(gw, item_id, new_value, zone=0):
-    features = get_features(gw)
-    cached = _last_data_items.get(gw, [])
+    gw_id = _resolve_gw_id(gw)
+    features = get_features(gw_id)
+    cached = _last_data_items.get(gw_id, [])
     prev_value = _get_val(cached, item_id, zone)
     if prev_value is None:
         prev_value = new_value
@@ -342,11 +400,12 @@ def _set_item(gw, item_id, new_value, zone=0):
         'items': [{'id': item_id, 'prevValue': prev_value, 'value': new_value, 'zone': zone}],
         'features': features
     }
-    api_post('/remote/dataItems/{}/set?umsys=metric'.format(gw), payload)
+    api_post('/remote/dataItems/{}/set?umsys=metric'.format(gw_id), payload)
 
 
 def set_ch_setpoint(gw, value):
-    features = get_features(gw)
+    gw_id = _resolve_gw_id(gw)
+    features = get_features(gw_id)
     zones = features.get('zones', [])
     z_num = zones[0]['num'] if zones else 1
     _set_item(gw, 'ZoneComfortTemp', value, z_num)

@@ -7,6 +7,7 @@
   "pip3": {
     "requests": {
       "reinstall": true
-    }
+    },
+    "pyserial": {}
   }
 }

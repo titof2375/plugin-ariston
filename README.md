@@ -1,6 +1,6 @@
 # Plugin Ariston pour Jeedom
 
-Plugin Jeedom permettant de piloter une chaudière Ariston connectée (Genus, Clas, Alteas, et autres modèles compatibles) via l'API Ariston NET (ariston-net.remotethermo.com).
+Plugin Jeedom permettant de piloter une chaudière Ariston connectée (Genus, Clas, Alteas, et autres modèles compatibles) via l'API Ariston NET.
 
 ## Fonctionnalités
 
@@ -18,10 +18,7 @@ Plugin Jeedom permettant de piloter une chaudière Ariston connectée (Genus, Cl
 
 ## Installation
 
-Depuis Jeedom : **Plugins → Gestion des plugins → Ajouter depuis une source**, puis renseignez :
-- Utilisateur : `titof2375`
-- Dépôt : `plugin-ariston`
-- Branche : `master`
+Installez le plugin depuis le Market Jeedom, puis activez-le une fois l'installation terminée.
 
 ## Configuration
 
@@ -31,7 +28,7 @@ Depuis Jeedom : **Plugins → Gestion des plugins → Ajouter depuis une source*
 
 ## Support
 
-Ce plugin n'est pas un plugin officiel Ariston ni Jeedom. En cas de souci, ouvrez une issue sur ce dépôt GitHub.
+Ce plugin n'est pas un plugin officiel Ariston ni Jeedom. En cas de souci, aucune garantie de support n'est assurée.
 
 ## Licence
 

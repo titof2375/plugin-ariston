@@ -237,14 +237,16 @@ def _parse_data(items, features):
     if holiday is not None:
         data['holiday'] = 1 if holiday else 0
 
-    # First zone
-    if zones:
-        z_num = zones[0]['num']
+    # All zones (a boiler can drive several independent heating circuits)
+    data['zones'] = []
+    for z in zones:
+        z_num = z['num']
+        zdata = {'num': z_num}
 
         room = _get_val(items, 'ZoneMeasuredTemp', z_num)
         if room is not None:
             try:
-                data['room_temp'] = round(float(room), 1)
+                zdata['room_temp'] = round(float(room), 1)
             except (TypeError, ValueError):
                 pass
 
@@ -253,13 +255,26 @@ def _parse_data(items, features):
             room_sp = _get_val(items, 'ZoneDesiredTemp', z_num)
         if room_sp is not None:
             try:
-                data['room_setpoint'] = round(float(room_sp), 1)
+                zdata['room_setpoint'] = round(float(room_sp), 1)
             except (TypeError, ValueError):
                 pass
 
         heat_req = _get_val(items, 'ZoneHeatRequest', z_num)
         if heat_req is not None:
-            data['ch_on'] = 1 if heat_req else 0
+            zdata['ch_on'] = 1 if heat_req else 0
+
+        data['zones'].append(zdata)
+
+    # Keep top-level room_temp/room_setpoint/ch_on mirroring the first zone,
+    # for backward compatibility with the original single-zone commands.
+    if data['zones']:
+        first = data['zones'][0]
+        if 'room_temp' in first:
+            data['room_temp'] = first['room_temp']
+        if 'room_setpoint' in first:
+            data['room_setpoint'] = first['room_setpoint']
+        if 'ch_on' in first:
+            data['ch_on'] = first['ch_on']
 
     ch_on = data.get('ch_on', 0)
     data['dhw_on'] = 1 if (data.get('flame') and not ch_on) else 0
@@ -403,11 +418,14 @@ def _set_item(gw, item_id, new_value, zone=0):
     api_post('/remote/dataItems/{}/set?umsys=metric'.format(gw_id), payload)
 
 
-def set_ch_setpoint(gw, value):
+def set_ch_setpoint(gw, value, zone=None):
     gw_id = _resolve_gw_id(gw)
     features = get_features(gw_id)
     zones = features.get('zones', [])
-    z_num = zones[0]['num'] if zones else 1
+    if zone is not None:
+        z_num = int(zone)
+    else:
+        z_num = zones[0]['num'] if zones else 1
     _set_item(gw, 'ZoneComfortTemp', value, z_num)
 
 
@@ -455,7 +473,8 @@ def read_socket():
 
             elif action == 'setCHSetpoint':
                 value = float(message.get('value', 20))
-                set_ch_setpoint(gw, value)
+                zone = message.get('zone')
+                set_ch_setpoint(gw, value, zone=zone)
                 time.sleep(3)
                 data = get_boiler_data(gw)
                 jeedom_com.send_change_immediate({'FUNC': 'getDatas', 'eqId': eqId, 'data': data})

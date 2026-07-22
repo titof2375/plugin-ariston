@@ -158,6 +158,60 @@ class ariston extends eqLogic {
     public function postRemove() {
     }
 
+    public function createZoneCmds($zoneNum) {
+        $roomTemp = $this->getCmd(null, 'zone' . $zoneNum . '_room_temp');
+        if (!is_object($roomTemp)) {
+            $roomTemp = new aristonCmd();
+            $roomTemp->setEqLogic_id($this->getId());
+            $roomTemp->setLogicalId('zone' . $zoneNum . '_room_temp');
+        }
+        $roomTemp->setName(__('Temp. ambiante', __FILE__) . ' - ' . __('Circuit', __FILE__) . ' ' . $zoneNum);
+        $roomTemp->setType('info');
+        $roomTemp->setSubType('numeric');
+        $roomTemp->setUnite('°C');
+        $roomTemp->setIsHistorized(1);
+        $roomTemp->save();
+
+        $roomSetpoint = $this->getCmd(null, 'zone' . $zoneNum . '_room_setpoint');
+        if (!is_object($roomSetpoint)) {
+            $roomSetpoint = new aristonCmd();
+            $roomSetpoint->setEqLogic_id($this->getId());
+            $roomSetpoint->setLogicalId('zone' . $zoneNum . '_room_setpoint');
+        }
+        $roomSetpoint->setName(__('Consigne', __FILE__) . ' - ' . __('Circuit', __FILE__) . ' ' . $zoneNum);
+        $roomSetpoint->setType('info');
+        $roomSetpoint->setSubType('numeric');
+        $roomSetpoint->setUnite('°C');
+        $roomSetpoint->setIsHistorized(1);
+        $roomSetpoint->save();
+
+        $chOn = $this->getCmd(null, 'zone' . $zoneNum . '_ch_on');
+        if (!is_object($chOn)) {
+            $chOn = new aristonCmd();
+            $chOn->setEqLogic_id($this->getId());
+            $chOn->setLogicalId('zone' . $zoneNum . '_ch_on');
+        }
+        $chOn->setName(__('Chauffage actif', __FILE__) . ' - ' . __('Circuit', __FILE__) . ' ' . $zoneNum);
+        $chOn->setType('info');
+        $chOn->setSubType('binary');
+        $chOn->setIsHistorized(1);
+        $chOn->save();
+
+        $setSetpoint = $this->getCmd(null, 'zone' . $zoneNum . '_set_setpoint');
+        if (!is_object($setSetpoint)) {
+            $setSetpoint = new aristonCmd();
+            $setSetpoint->setEqLogic_id($this->getId());
+            $setSetpoint->setLogicalId('zone' . $zoneNum . '_set_setpoint');
+        }
+        $setSetpoint->setName(__('Définir consigne', __FILE__) . ' - ' . __('Circuit', __FILE__) . ' ' . $zoneNum);
+        $setSetpoint->setType('action');
+        $setSetpoint->setSubType('slider');
+        $setSetpoint->setConfiguration('minValue', 5);
+        $setSetpoint->setConfiguration('maxValue', 30);
+        $setSetpoint->setIsHistorized(0);
+        $setSetpoint->save();
+    }
+
     public function createCmds() {
 
         $online = $this->getCmd(null, 'online');
@@ -547,6 +601,26 @@ class aristonCmd extends cmd {
     public function execute($_options = array()) {
         $eqlogic = $this->getEqLogic();
         $logicalCmd = $this->getLogicalId();
+
+        if (preg_match('/^zone(\d+)_set_setpoint$/', $logicalCmd, $m)) {
+            $zoneNum = intval($m[1]);
+            $value = floatval($_options['slider']);
+            if ($value < 5 || $value > 30) {
+                throw new Exception(__('La consigne doit être entre 5 et 30°C', __FILE__));
+            }
+            $data = array(
+                'action' => 'setCHSetpoint',
+                'eqId' => $eqlogic->getId(),
+                'gw' => $eqlogic->getConfiguration('gw', ''),
+                'value' => $value,
+                'zone' => $zoneNum,
+                'apikey' => jeedom::getApiKey('ariston')
+            );
+            $value = json_encode($data);
+            ariston::socketConnection($value);
+            log::add('ariston', 'debug', 'Exécution commande : ' . $this->getName());
+            return;
+        }
 
         switch ($logicalCmd) {
             case 'set_ch_setpoint':

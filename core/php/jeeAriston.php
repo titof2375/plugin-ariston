@@ -35,6 +35,26 @@ if ($result['FUNC'] == 'getDatas') {
         7 => 'Programme',
     );
 
+    if (isset($data['zones']) && is_array($data['zones'])) {
+        foreach ($data['zones'] as $zone) {
+            $zoneNum = intval($zone['num']);
+            $eqLogic->createZoneCmds($zoneNum);
+
+            $roomTemp = $eqLogic->getCmd(null, 'zone' . $zoneNum . '_room_temp');
+            if (is_object($roomTemp) && isset($zone['room_temp'])) {
+                $roomTemp->event(round(floatval($zone['room_temp']), 1));
+            }
+            $roomSetpoint = $eqLogic->getCmd(null, 'zone' . $zoneNum . '_room_setpoint');
+            if (is_object($roomSetpoint) && isset($zone['room_setpoint'])) {
+                $roomSetpoint->event(round(floatval($zone['room_setpoint']), 1));
+            }
+            $chOn = $eqLogic->getCmd(null, 'zone' . $zoneNum . '_ch_on');
+            if (is_object($chOn) && isset($zone['ch_on'])) {
+                $chOn->event($zone['ch_on'] ? 1 : 0);
+            }
+        }
+    }
+
     $cmds = $eqLogic->getCmd('info');
     foreach ($cmds as $cmd) {
         switch ($cmd->getLogicalId()) {

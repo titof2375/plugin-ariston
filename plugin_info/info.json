@@ -1,7 +1,7 @@
 {
     "id": "ariston",
     "name": "Ariston",
-    "pluginVersion": "0.1",
+    "pluginVersion": "0.2",
     "description": {
         "fr_FR": "Permet de piloter une chaudière Ariston connectée via l'API Ariston NET (Genus, Clas, Alteas, etc.)."
     },

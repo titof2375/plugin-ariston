@@ -167,9 +167,9 @@ def _items_list(features):
         'ZoneMeasuredTemp', 'ZoneDesiredTemp', 'ZoneComfortTemp',
         'ZoneMode', 'ZoneHeatRequest', 'ZoneEconomyTemp'
     ]
-    items = [{'id': p, 'zone': 0} for p in device_props]
+    items = [{'id': p, 'zn': 0} for p in device_props]
     for z in features.get('zones', []):
-        items += [{'id': p, 'zone': z['num']} for p in thermo_props]
+        items += [{'id': p, 'zn': z['num']} for p in thermo_props]
     return items
 
 # ------------------------------------------------------------------
@@ -405,6 +405,8 @@ def get_boiler_data(gw):
 # ------------------------------------------------------------------
 
 def _set_item(gw, item_id, new_value, zone=0):
+    # Kept for compatibility; no longer used for mode/dhw/zone setters below,
+    # which need the dedicated endpoints the Ariston API actually expects.
     gw_id = _resolve_gw_id(gw)
     features = get_features(gw_id)
     cached = _last_data_items.get(gw_id, [])
@@ -426,11 +428,27 @@ def set_ch_setpoint(gw, value, zone=None):
         z_num = int(zone)
     else:
         z_num = zones[0]['num'] if zones else 1
-    _set_item(gw, 'ZoneComfortTemp', value, z_num)
+    cached = _last_data_items.get(gw_id, [])
+    comfort_old = _get_val(cached, 'ZoneComfortTemp', z_num)
+    economy_old = _get_val(cached, 'ZoneEconomyTemp', z_num)
+    if comfort_old is None:
+        comfort_old = value
+    if economy_old is None:
+        economy_old = value
+    payload = {
+        'new': {'comf': value, 'econ': economy_old},
+        'old': {'comf': comfort_old, 'econ': economy_old}
+    }
+    api_post('/remote/zones/{}/{}/temperatures?umsys=metric'.format(gw_id, z_num), payload)
 
 
 def set_dhw_setpoint(gw, value):
-    _set_item(gw, 'DhwTemp', value, 0)
+    gw_id = _resolve_gw_id(gw)
+    cached = _last_data_items.get(gw_id, [])
+    old_value = _get_val(cached, 'DhwTemp', 0)
+    if old_value is None:
+        old_value = value
+    api_post('/remote/plantData/{}/dhwTemp?umsys=metric'.format(gw_id), {'new': value, 'old': old_value})
 
 
 def set_mode(gw, mode_str):
@@ -444,7 +462,12 @@ def set_mode(gw, mode_str):
         'auto':         PLANT_MODE_WINTER,
     }
     mode_int = mode_map.get(mode_str.lower(), PLANT_MODE_WINTER)
-    _set_item(gw, 'PlantMode', mode_int, 0)
+    gw_id = _resolve_gw_id(gw)
+    cached = _last_data_items.get(gw_id, [])
+    old_value = _get_val(cached, 'PlantMode', 0)
+    if old_value is None:
+        old_value = mode_int
+    api_post('/remote/plantData/{}/mode'.format(gw_id), {'new': mode_int, 'old': old_value})
 
 # ------------------------------------------------------------------
 # Socket handler

@@ -8,6 +8,7 @@
     "requests": {
       "reinstall": true
     },
-    "pyserial": {}
+    "pyserial": {},
+    "pyudev": {}
   }
 }
